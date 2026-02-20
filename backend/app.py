@@ -4,6 +4,8 @@ import joblib
 import pandas as pd
 import numpy as np
 import os
+import gzip
+import pickle
 
 app = Flask(__name__)
 CORS(app)
@@ -14,9 +16,17 @@ pipeline = None
 def load_pipeline():
     global pipeline
     try:
-        pipeline_path = os.path.join(os.path.dirname(__file__), 'readmission_pipeline.joblib')
-        pipeline = joblib.load(pipeline_path)
-        print("✅ Pipeline loaded successfully")
+        # Try to load compressed pipeline first
+        pipeline_path = os.path.join(os.path.dirname(__file__), 'readmission_pipeline.joblib.gz')
+        if os.path.exists(pipeline_path):
+            with gzip.open(pipeline_path, 'rb') as f:
+                pipeline = pickle.load(f)
+            print("✅ Compressed pipeline loaded successfully")
+        else:
+            # Fall back to original pipeline
+            pipeline_path = os.path.join(os.path.dirname(__file__), 'readmission_pipeline.joblib')
+            pipeline = joblib.load(pipeline_path)
+            print("✅ Original pipeline loaded successfully")
     except Exception as e:
         print(f"❌ Error loading pipeline: {e}")
         # Create a dummy pipeline for demonstration
