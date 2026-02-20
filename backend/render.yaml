@@ -2,7 +2,15 @@ services:
   - type: web
     name: patient-readmission-api
     runtime: python
-    pythonVersion: 3.11
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    plan: free
+    buildCommand: |
+      export PYTHON_VERSION=3.11.9
+      pip install --upgrade pip setuptools wheel
+      pip install -r requirements.txt
     startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FLASK_ENV
+        value: production
     autoDeploy: true
