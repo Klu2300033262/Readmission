@@ -2,7 +2,7 @@ services:
   - type: web
     name: patient-readmission-api
     runtime: python
-    pythonVersion: 3.12
-    buildCommand: pip install -r requirements.txt
+    pythonVersion: 3.11
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: python app.py
     autoDeploy: true
