@@ -134,7 +134,124 @@ def calculate_risk_probability(data_dict):
         # Low risk - ensure it's truly low
         probability = max(8, min(25, base_risk))
     
+    # Cap at 80% (clinical reality)
+    probability = min(base_risk, 80)
+    
     return probability
+
+def get_top_risk_factors(data_dict, probability):
+    """Get top 3 risk factors based on patient data"""
+    risk_factors = []
+    
+    # Define risk factor thresholds based on clinical research
+    risk_checks = [
+        {
+            'factor': 'Multiple prior admissions',
+            'value': data_dict['number_inpatient'],
+            'threshold': 2,
+            'weight': 20
+        },
+        {
+            'factor': 'Frequent emergency visits',
+            'value': data_dict['number_emergency'],
+            'threshold': 1,
+            'weight': 25
+        },
+        {
+            'factor': 'Extended hospital stay',
+            'value': data_dict['time_in_hospital'],
+            'threshold': 5,
+            'weight': 15
+        },
+        {
+            'factor': 'Multiple diagnoses',
+            'value': data_dict['number_diagnoses'],
+            'threshold': 7,
+            'weight': 12
+        },
+        {
+            'factor': 'Complex medication regimen',
+            'value': data_dict['num_medications'],
+            'threshold': 15,
+            'weight': 10
+        },
+        {
+            'factor': 'Advanced age',
+            'value': data_dict['age'],
+            'high_risk_ages': ['[60-70)', '[70-80)', '[80-90)', '[90-100)'],
+            'weight': 18
+        },
+        {
+            'factor': 'Insulin therapy changes',
+            'value': data_dict['insulin'],
+            'high_risk_status': ['Up', 'Down'],
+            'weight': 15
+        }
+    ]
+    
+    # Calculate risk scores
+    scored_factors = []
+    for check in risk_checks:
+        score = 0
+        if 'threshold' in check:
+            if check['value'] >= check['threshold']:
+                score = check['weight']
+        elif 'high_risk_ages' in check:
+            if check['value'] in check['high_risk_ages']:
+                score = check['weight']
+        elif 'high_risk_status' in check:
+            if check['value'] in check['high_risk_status']:
+                score = check['weight']
+        
+        if score > 0:
+            scored_factors.append({
+                'factor': check['factor'],
+                'score': score,
+                'details': f"Value: {check['value']}"
+            })
+    
+    # Sort by score and return top 3
+    scored_factors.sort(key=lambda x: x['score'], reverse=True)
+    return scored_factors[:3]
+
+def get_clinical_recommendations(risk_level, probability, data_dict):
+    """Generate clinical recommendations based on risk level"""
+    recommendations = []
+    
+    if risk_level == "HIGH RISK":
+        recommendations.extend([
+            "Schedule follow-up appointment within 7 days",
+            "Comprehensive medication review required",
+            "Implement close outpatient monitoring",
+            "Consider home health services",
+            "Diabetes education reinforcement needed"
+        ])
+        
+        # Specific recommendations based on risk factors
+        if data_dict['number_inpatient'] >= 2:
+            recommendations.append("Review discharge planning process")
+        
+        if data_dict['insulin'] in ['Up', 'Down']:
+            recommendations.append("Endocrinology consultation recommended")
+            
+        if data_dict['time_in_hospital'] > 5:
+            recommendations.append("Assess for post-acute care needs")
+    
+    else:  # LOW RISK
+        recommendations.extend([
+            "Standard discharge planning appropriate",
+            "Routine follow-up in 4-6 weeks",
+            "Continue current medication regimen",
+            "Patient education on self-management",
+            "Primary care follow-up recommended"
+        ])
+        
+        # Specific recommendations for moderate risk
+        if probability > 30:
+            recommendations.append("Consider telehealth follow-up")
+            recommendations.append("Monitor medication adherence")
+    
+    return recommendations
 
 def predict_from_dict(data_dict):
     """Make prediction from dictionary input"""
@@ -153,16 +270,57 @@ def predict_from_dict(data_dict):
         prediction = 1 if custom_probability > 50 else 0
         probability = custom_probability
         
-        # Determine risk level
+        # Determine risk level and category
         risk_level = "HIGH RISK" if prediction == 1 else "LOW RISK"
+        
+        if probability <= 30:
+            risk_category = "Low"
+        elif probability <= 60:
+            risk_category = "Moderate"
+        else:
+            risk_category = "High"
+        
+        # Get top risk factors
+        risk_factors = get_top_risk_factors(data_dict, probability)
+        
+        # Get clinical recommendations
+        recommendations = get_clinical_recommendations(risk_level, probability, data_dict)
         
         return {
             "prediction": int(prediction),
             "risk_level": risk_level,
-            "probability": round(probability, 2)
+            "probability": round(probability, 2),
+            "risk_category": risk_category,
+            "risk_factors": risk_factors,
+            "recommendations": recommendations,
+            "patient_data": data_dict
         }
     except Exception as e:
         raise Exception(f"Prediction error: {str(e)}")
+
+# Global variables for analytics
+prediction_stats = {
+    'total_predictions': 0,
+    'high_risk_count': 0,
+    'low_risk_count': 0,
+    'average_risk_score': 0.0,
+    'recent_predictions': []
+}
+
+@app.route('/analytics', methods=['GET'])
+def get_analytics():
+    """Get real-time analytics dashboard data"""
+    return jsonify({
+        'total_predictions': prediction_stats['total_predictions'],
+        'high_risk_percentage': round(
+            (prediction_stats['high_risk_count'] / max(prediction_stats['total_predictions'], 1)) * 100, 1
+        ),
+        'low_risk_percentage': round(
+            (prediction_stats['low_risk_count'] / max(prediction_stats['total_predictions'], 1)) * 100, 1
+        ),
+        'average_risk_score': round(prediction_stats['average_risk_score'], 1),
+        'recent_predictions': prediction_stats['recent_predictions'][-10:]  # Last 10 predictions
+    })
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -202,6 +360,30 @@ def predict():
         
         # Make prediction
         result = predict_from_dict(data)
+        
+        # Update analytics
+        global prediction_stats
+        prediction_stats['total_predictions'] += 1
+        
+        if result['risk_level'] == 'HIGH RISK':
+            prediction_stats['high_risk_count'] += 1
+        else:
+            prediction_stats['low_risk_count'] += 1
+        
+        # Update average risk score
+        total_score = prediction_stats['average_risk_score'] * (prediction_stats['total_predictions'] - 1) + result['probability']
+        prediction_stats['average_risk_score'] = total_score / prediction_stats['total_predictions']
+        
+        # Add to recent predictions
+        prediction_stats['recent_predictions'].append({
+            'risk_level': result['risk_level'],
+            'probability': result['probability'],
+            'timestamp': pd.Timestamp.now().isoformat()
+        })
+        
+        # Keep only last 50 predictions
+        if len(prediction_stats['recent_predictions']) > 50:
+            prediction_stats['recent_predictions'] = prediction_stats['recent_predictions'][-50:]
         
         return jsonify(result), 200
         
