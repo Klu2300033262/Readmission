@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import './PatientForm.css';
 
-const PatientForm = ({ onSubmit, loading }) => {
+const PatientForm = ({ onSubmit, loading, onReset }) => {
   const [formData, setFormData] = useState({
+    patient_name: '',
     number_inpatient: '',
     time_in_hospital: '',
     num_medications: '',
@@ -14,6 +16,30 @@ const PatientForm = ({ onSubmit, loading }) => {
   });
 
   const [errors, setErrors] = useState({});
+
+  // Reset form function
+  const resetForm = () => {
+    setFormData({
+      patient_name: '',
+      number_inpatient: '',
+      time_in_hospital: '',
+      num_medications: '',
+      num_procedures: '',
+      number_diagnoses: '',
+      num_lab_procedures: '',
+      number_emergency: '',
+      age: '[60-70)',
+      insulin: 'Steady'
+    });
+    setErrors({});
+  };
+
+  // Call reset function when onReset prop changes
+  React.useEffect(() => {
+    if (onReset && typeof onReset === 'function') {
+      onReset(resetForm);
+    }
+  }, [onReset]);
 
   const ageOptions = [
     '[0-10)', '[10-20)', '[20-30)', '[30-40)', '[40-50)', 
@@ -41,6 +67,11 @@ const PatientForm = ({ onSubmit, loading }) => {
   const validateForm = () => {
     const newErrors = {};
     
+    // Validate patient name
+    if (!formData.patient_name || formData.patient_name.trim() === '') {
+      newErrors.patient_name = 'Patient name is required';
+    }
+    
     // Validate integer fields
     const integerFields = [
       'number_inpatient', 'time_in_hospital', 'num_medications',
@@ -49,10 +80,10 @@ const PatientForm = ({ onSubmit, loading }) => {
     
     integerFields.forEach(field => {
       const value = formData[field];
-      if (!value) {
+      if (!value || value === '') {
         newErrors[field] = 'This field is required';
       } else if (isNaN(value) || parseInt(value) < 0) {
-        newErrors[field] = 'Must be a non-negative integer';
+        newErrors[field] = 'Must be a non-negative number';
       }
     });
     
@@ -64,8 +95,8 @@ const PatientForm = ({ onSubmit, loading }) => {
     e.preventDefault();
     
     if (validateForm()) {
-      // Convert integer fields to numbers
-      const submissionData = {
+      // Convert string values to integers
+      const submitData = {
         ...formData,
         number_inpatient: parseInt(formData.number_inpatient),
         time_in_hospital: parseInt(formData.time_in_hospital),
@@ -76,77 +107,159 @@ const PatientForm = ({ onSubmit, loading }) => {
         number_emergency: parseInt(formData.number_emergency)
       };
       
-      onSubmit(submissionData);
+      onSubmit(submitData);
     }
   };
 
+  // Direct reset function for immediate use
+  const directReset = () => {
+    console.log('Direct reset called'); // Debug log
+    setFormData({
+      patient_name: '',
+      number_inpatient: '',
+      time_in_hospital: '',
+      num_medications: '',
+      num_procedures: '',
+      number_diagnoses: '',
+      num_lab_procedures: '',
+      number_emergency: '',
+      age: '[60-70)',
+      insulin: 'Steady'
+    });
+    setErrors({});
+  };
+
+  const formFields = [
+    { 
+      name: 'patient_name', 
+      label: 'Patient Name', 
+      type: 'text',
+      placeholder: 'e.g., John Doe'
+    },
+    { 
+      name: 'number_inpatient', 
+      label: 'Number of Inpatient Visits', 
+      type: 'number',
+      placeholder: 'e.g., 2'
+    },
+    { 
+      name: 'time_in_hospital', 
+      label: 'Time in Hospital (days)', 
+      type: 'number',
+      placeholder: 'e.g., 5'
+    },
+    { 
+      name: 'num_medications', 
+      label: 'Number of Medications', 
+      type: 'number',
+      placeholder: 'e.g., 10'
+    },
+    { 
+      name: 'num_procedures', 
+      label: 'Number of Procedures', 
+      type: 'number',
+      placeholder: 'e.g., 1'
+    },
+    { 
+      name: 'number_diagnoses', 
+      label: 'Number of Diagnoses', 
+      type: 'number',
+      placeholder: 'e.g., 6'
+    },
+    { 
+      name: 'num_lab_procedures', 
+      label: 'Number of Lab Procedures', 
+      type: 'number',
+      placeholder: 'e.g., 40'
+    },
+    { 
+      name: 'number_emergency', 
+      label: 'Number of Emergency Visits', 
+      type: 'number',
+      placeholder: 'e.g., 1'
+    }
+  ];
+
   return (
     <div className="patient-form">
-      <h2>Patient Information</h2>
-      <form onSubmit={handleSubmit}>
-        <div className="form-grid">
-          {/* Integer Fields */}
-          {[
-            { name: 'number_inpatient', label: 'Number of Inpatient Visits' },
-            { name: 'time_in_hospital', label: 'Time in Hospital (days)' },
-            { name: 'num_medications', label: 'Number of Medications' },
-            { name: 'num_procedures', label: 'Number of Procedures' },
-            { name: 'number_diagnoses', label: 'Number of Diagnoses' },
-            { name: 'num_lab_procedures', label: 'Number of Lab Procedures' },
-            { name: 'number_emergency', label: 'Number of Emergency Visits' }
-          ].map(({ name, label }) => (
-            <div key={name} className="form-group">
-              <label htmlFor={name}>{label}</label>
-              <input
-                type="number"
-                id={name}
-                name={name}
-                value={formData[name]}
-                onChange={handleChange}
-                min="0"
-                className={errors[name] ? 'error' : ''}
-              />
-              {errors[name] && <span className="error-message">{errors[name]}</span>}
-            </div>
-          ))}
+      <div className="form-header">
+        <h2>Patient Information</h2>
+        <p>Enter patient data to assess readmission risk</p>
+      </div>
 
-          {/* Dropdown Fields */}
-          <div className="form-group">
-            <label htmlFor="age">Age Range</label>
-            <select
-              id="age"
-              name="age"
-              value={formData.age}
+      <form onSubmit={handleSubmit} className="form-grid">
+        {formFields.map(field => (
+          <div key={field.name} className="form-group">
+            <label htmlFor={field.name}>
+              {field.label}
+            </label>
+            <input
+              type={field.type}
+              id={field.name}
+              name={field.name}
+              value={formData[field.name]}
               onChange={handleChange}
-            >
-              {ageOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
+              placeholder={field.placeholder}
+              className={errors[field.name] ? 'error' : ''}
+            />
+            {errors[field.name] && (
+              <span className="error-text">{errors[field.name]}</span>
+            )}
           </div>
+        ))}
 
-          <div className="form-group">
-            <label htmlFor="insulin">Insulin Status</label>
-            <select
-              id="insulin"
-              name="insulin"
-              value={formData.insulin}
-              onChange={handleChange}
-            >
-              {insulinOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          </div>
+        <div className="form-group">
+          <label htmlFor="age">Age Group</label>
+          <select
+            id="age"
+            name="age"
+            value={formData.age}
+            onChange={handleChange}
+          >
+            {ageOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
         </div>
 
-        <button 
-          type="submit" 
-          className="predict-btn"
-          disabled={loading}
-        >
-          {loading ? 'Predicting...' : 'Predict Readmission Risk'}
-        </button>
+        <div className="form-group">
+          <label htmlFor="insulin">Insulin Status</label>
+          <select
+            id="insulin"
+            name="insulin"
+            value={formData.insulin}
+            onChange={handleChange}
+          >
+            {insulinOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-actions">
+          <button 
+            type="button" 
+            onClick={directReset}
+            className="reset-btn"
+            style={{ marginRight: '10px', background: '#64748B', color: 'white' }}
+          >
+            Clear Form
+          </button>
+          <button 
+            type="submit" 
+            className="submit-btn"
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <div className="spinner"></div>
+                Analyzing...
+              </>
+            ) : (
+              'Assess Risk'
+            )}
+          </button>
+        </div>
       </form>
     </div>
   );

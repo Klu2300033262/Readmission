@@ -6,12 +6,53 @@ import numpy as np
 import os
 import gzip
 import pickle
+from datetime import datetime
+import io
+import base64
+import sqlite3
 
 app = Flask(__name__)
 CORS(app)
 
 # Load the pipeline once at startup
 pipeline = None
+
+DB_PATH = os.path.join(os.path.dirname(__file__), 'readmission.db')
+
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS patient_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                patient_name TEXT,
+                age TEXT NOT NULL,
+                insulin TEXT NOT NULL,
+                number_inpatient INTEGER NOT NULL,
+                time_in_hospital INTEGER NOT NULL,
+                num_medications INTEGER NOT NULL,
+                num_procedures INTEGER NOT NULL,
+                number_diagnoses INTEGER NOT NULL,
+                num_lab_procedures INTEGER NOT NULL,
+                number_emergency INTEGER NOT NULL,
+                risk_level TEXT NOT NULL,
+                risk_category TEXT NOT NULL,
+                probability REAL NOT NULL
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 def load_pipeline():
     global pipeline
@@ -376,16 +417,150 @@ def predict():
         
         # Add to recent predictions
         prediction_stats['recent_predictions'].append({
+            'patient_name': data.get('patient_name', 'Unknown Patient'),
             'risk_level': result['risk_level'],
             'probability': result['probability'],
             'timestamp': pd.Timestamp.now().isoformat()
         })
+
+        # Persist prediction in SQLite database
+        try:
+            conn = get_db_connection()
+            conn.execute(
+                """
+                INSERT INTO patient_predictions (
+                    timestamp,
+                    patient_name,
+                    age,
+                    insulin,
+                    number_inpatient,
+                    time_in_hospital,
+                    num_medications,
+                    num_procedures,
+                    number_diagnoses,
+                    num_lab_procedures,
+                    number_emergency,
+                    risk_level,
+                    risk_category,
+                    probability
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    pd.Timestamp.now().isoformat(),
+                    data.get('patient_name', 'Unknown Patient'),
+                    data['age'],
+                    data['insulin'],
+                    int(data['number_inpatient']),
+                    int(data['time_in_hospital']),
+                    int(data['num_medications']),
+                    int(data['num_procedures']),
+                    int(data['number_diagnoses']),
+                    int(data['num_lab_procedures']),
+                    int(data['number_emergency']),
+                    result['risk_level'],
+                    result['risk_category'],
+                    float(result['probability'])
+                ),
+            )
+            conn.commit()
+            print("Inserted row into patient_predictions")
+        except Exception as db_err:
+            # Log to console; do not fail the API response if DB write fails
+            print(f"SQLite insert error: {db_err}")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
         
         # Keep only last 50 predictions
         if len(prediction_stats['recent_predictions']) > 50:
             prediction_stats['recent_predictions'] = prediction_stats['recent_predictions'][-50:]
         
         return jsonify(result), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+def generate_pdf_report(result):
+    """Generate a text-based report (base64 encoded for frontend)"""
+    try:
+        # Create report content
+        report_content = f"""
+PATIENT READMISSION RISK REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+{'='*50}
+
+PATIENT INFORMATION:
+- Age Group: {result['patient_data']['age']}
+- Insulin Status: {result['patient_data']['insulin']}
+- Hospital Stay: {result['patient_data']['time_in_hospital']} days
+- Prior Admissions: {result['patient_data']['number_inpatient']}
+- Emergency Visits: {result['patient_data']['number_emergency']}
+- Number of Diagnoses: {result['patient_data']['number_diagnoses']}
+- Medications: {result['patient_data']['num_medications']}
+- Procedures: {result['patient_data']['num_procedures']}
+- Lab Procedures: {result['patient_data']['num_lab_procedures']}
+
+RISK ASSESSMENT:
+- Risk Level: {result['risk_level']}
+- Risk Category: {result['risk_category']}
+- Probability: {result['probability']}%
+
+TOP RISK FACTORS:
+"""
+        
+        for i, factor in enumerate(result['risk_factors'], 1):
+            report_content += f"{i}. {factor['factor']} ({factor['details']})\n"
+        
+        report_content += f"""
+CLINICAL RECOMMENDATIONS:
+"""
+        
+        for i, rec in enumerate(result['recommendations'], 1):
+            report_content += f"{i}. {rec}\n"
+        
+        report_content += f"""
+{'='*50}
+
+IMPORTANT NOTES:
+- This report is generated using AI/ML algorithms
+- Risk assessment should be validated by healthcare professionals
+- Clinical decisions should consider complete patient history
+- This tool is for informational purposes only
+
+For medical emergencies, contact emergency services immediately.
+"""
+        
+        # Encode as base64 for frontend
+        report_bytes = report_content.encode('utf-8')
+        report_base64 = base64.b64encode(report_bytes).decode('utf-8')
+        
+        return {
+            'filename': f"readmission_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            'content': report_base64,
+            'mime_type': 'text/plain'
+        }
+        
+    except Exception as e:
+        raise Exception(f"Report generation failed: {str(e)}")
+
+@app.route('/download_report', methods=['POST'])
+def download_report():
+    """Generate and download risk report"""
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request must be JSON"}), 400
+        
+        data = request.get_json()
+        
+        # Generate report
+        report = generate_pdf_report(data)
+        
+        return jsonify({
+            'success': True,
+            'report': report
+        }), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -399,5 +574,6 @@ def health_check():
     }), 200
 
 if __name__ == '__main__':
+    init_db()
     load_pipeline()
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -1,4 +1,8 @@
 import React from 'react';
+import RiskMeter from './RiskMeter';
+import RiskFactors from './RiskFactors';
+import ClinicalRecommendations from './ClinicalRecommendations';
+import './ResultCard.css';
 
 const ResultCard = ({ result, loading }) => {
   if (loading) {
@@ -14,8 +18,8 @@ const ResultCard = ({ result, loading }) => {
     return null;
   }
 
-  const { prediction, risk_level, probability } = result;
-  const isHighRisk = prediction === 1;
+  const { risk_level, probability, risk_category, risk_factors, recommendations } = result;
+  const isHighRisk = risk_level === 'HIGH RISK';
 
   return (
     <div className={`result-card ${isHighRisk ? 'high-risk' : 'low-risk'}`}>
@@ -24,39 +28,31 @@ const ResultCard = ({ result, loading }) => {
           {isHighRisk ? '⚠️' : '✅'}
           <span>{risk_level}</span>
         </div>
+        <div className="risk-category">
+          Category: <span className={`category-badge ${risk_category.toLowerCase()}`}>{risk_category}</span>
+        </div>
       </div>
       
       <div className="result-content">
-        <div className="probability-section">
-          <h3>Risk Probability</h3>
-          <div className="probability-display">
-            <div className="probability-bar">
-              <div 
-                className={`probability-fill ${isHighRisk ? 'high' : 'low'}`}
-                style={{ width: `${probability}%` }}
-              ></div>
-            </div>
-            <span className="probability-text">{probability}%</span>
-          </div>
+        {/* Risk Intelligence Panel */}
+        <div className="risk-intelligence-panel">
+          <h3>🧠 Risk Intelligence Panel</h3>
+          <RiskMeter probability={probability} riskCategory={risk_category} />
         </div>
 
-        <div className="recommendations">
-          <h4>Recommendations</h4>
-          {isHighRisk ? (
-            <ul>
-              <li>Consider extended monitoring period</li>
-              <li>Schedule follow-up appointment within 7 days</li>
-              <li>Review medication adherence</li>
-              <li>Coordinate with care management team</li>
-            </ul>
-          ) : (
-            <ul>
-              <li>Standard discharge protocols apply</li>
-              <li>Routine follow-up care</li>
-              <li>Patient education on warning signs</li>
-              <li>Maintain current medication regimen</li>
-            </ul>
-          )}
+        {/* Top Risk Factors */}
+        <div className="risk-factors-section">
+          <h3>🔍 Top Risk Drivers</h3>
+          <RiskFactors factors={risk_factors} />
+        </div>
+
+        {/* Clinical Recommendations */}
+        <div className="recommendations-section">
+          <h3>💡 Smart Clinical Recommendations</h3>
+          <ClinicalRecommendations 
+            recommendations={recommendations} 
+            isHighRisk={isHighRisk}
+          />
         </div>
       </div>
     </div>

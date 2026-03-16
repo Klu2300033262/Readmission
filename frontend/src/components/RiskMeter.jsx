@@ -1,45 +1,90 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import './RiskMeter.css';
 
-const RiskMeter = ({ probability, riskCategory, riskLevel }) => {
+const RiskMeter = ({ probability, riskCategory }) => {
+  const [animatedProbability, setAnimatedProbability] = useState(0);
+
+  useEffect(() => {
+    // Animate probability on mount
+    const timer = setTimeout(() => {
+      setAnimatedProbability(probability);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [probability]);
+
   const getRiskColor = (category) => {
     switch (category) {
       case 'Low':
-        return '#10b981'; // green-500
+        return '#22C55E';
       case 'Moderate':
-        return '#f59e0b'; // amber-500
+        return '#F59E0B';
       case 'High':
-        return '#ef4444'; // red-500
+        return '#EF4444';
       default:
-        return '#6b7280'; // gray-500
+        return '#64748B';
     }
   };
 
-  const getRotation = () => {
-    // Map probability to rotation angle (0-180 degrees)
-    return (probability / 100) * 180 - 90;
+  const getRiskGradient = (category) => {
+    const color = getRiskColor(category);
+    return `conic-gradient(from 180deg, ${color} 0deg, ${color} ${animatedProbability * 3.6}deg, #E5E7EB ${animatedProbability * 3.6}deg)`;
   };
 
   const riskColor = getRiskColor(riskCategory);
-  const rotation = getRotation();
 
   return (
     <div className="risk-meter-container">
       <div className="risk-meter">
-        <div className="gauge">
+        <motion.div 
+          className="gauge"
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        >
           <div className="gauge-background"></div>
-          <div className="gauge-fill" style={{ 
-            background: `conic-gradient(from 180deg, ${riskColor} 0deg, ${riskColor} ${probability * 3.6}deg, #e5e7eb ${probability * 3.6}deg)`
-          }}></div>
+          <motion.div 
+            className="gauge-fill" 
+            style={{ background: getRiskGradient(riskCategory) }}
+            initial={{ rotate: -90 }}
+            animate={{ rotate: animatedProbability * 3.6 - 90 }}
+            transition={{ duration: 1.5, ease: "easeOut" }}
+          ></motion.div>
           <div className="gauge-center">
-            <div className="risk-percentage">{probability}%</div>
-            <div className="risk-category">{riskCategory}</div>
-            <div className="risk-level">{riskLevel}</div>
+            <motion.div 
+              className="risk-percentage"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, duration: 0.3 }}
+            >
+              {probability}%
+            </motion.div>
+            <motion.div 
+              className="risk-category"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.7, duration: 0.3 }}
+            >
+              {riskCategory} Risk
+            </motion.div>
+            <motion.div 
+              className="risk-indicator"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.9, duration: 0.3 }}
+            >
+              {riskCategory === 'High' ? '🔴' : riskCategory === 'Moderate' ? '🟡' : '🟢'}
+            </motion.div>
           </div>
-        </div>
+        </motion.div>
       </div>
       
-      <div className="risk-legend">
+      <motion.div 
+        className="risk-legend"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1.0, duration: 0.5 }}
+      >
         <div className="legend-item low">
           <div className="legend-color"></div>
           <span>Low (0-30%)</span>
@@ -52,7 +97,7 @@ const RiskMeter = ({ probability, riskCategory, riskLevel }) => {
           <div className="legend-color"></div>
           <span>High (60%+)</span>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
