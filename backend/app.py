@@ -577,3 +577,204 @@ if __name__ == '__main__':
     init_db()
     load_pipeline()
     app.run(debug=True, host='0.0.0.0', port=5000)
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import joblib
+import pandas as pd
+import numpy as np
+import os
+import gzip
+import pickle
+import sqlite3
+from datetime import datetime
+import base64
+
+app = Flask(__name__)
+CORS(app)
+
+pipeline = None
+DB_PATH = os.path.join(os.path.dirname(__file__), 'readmission.db')
+
+
+# ---------------- HOME ROUTE ----------------
+@app.route("/")
+def home():
+    return jsonify({
+        "message": "Hospital Readmission Prediction API is running",
+        "available_endpoints": [
+            "/predict",
+            "/analytics",
+            "/download_report",
+            "/health"
+        ]
+    })
+
+
+# ---------------- DATABASE ----------------
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS patient_predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            patient_name TEXT,
+            age TEXT,
+            insulin TEXT,
+            number_inpatient INTEGER,
+            time_in_hospital INTEGER,
+            num_medications INTEGER,
+            num_procedures INTEGER,
+            number_diagnoses INTEGER,
+            num_lab_procedures INTEGER,
+            number_emergency INTEGER,
+            risk_level TEXT,
+            risk_category TEXT,
+            probability REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+# ---------------- LOAD PIPELINE ----------------
+def load_pipeline():
+    global pipeline
+    try:
+        pipeline_path = os.path.join(os.path.dirname(__file__), 'readmission_pipeline.joblib.gz')
+
+        if os.path.exists(pipeline_path):
+            with gzip.open(pipeline_path, 'rb') as f:
+                pipeline = pickle.load(f)
+            print("Pipeline loaded (compressed)")
+        else:
+            pipeline_path = os.path.join(os.path.dirname(__file__), 'readmission_pipeline.joblib')
+            pipeline = joblib.load(pipeline_path)
+            print("Pipeline loaded")
+
+    except Exception as e:
+        print("Pipeline load failed:", e)
+
+
+# ---------------- ANALYTICS ----------------
+prediction_stats = {
+    "total_predictions": 0,
+    "high_risk_count": 0,
+    "low_risk_count": 0,
+    "average_risk_score": 0
+}
+
+
+@app.route("/analytics", methods=["GET"])
+def analytics():
+    total = max(prediction_stats["total_predictions"], 1)
+
+    return jsonify({
+        "total_predictions": prediction_stats["total_predictions"],
+        "high_risk_percentage": round(prediction_stats["high_risk_count"] / total * 100, 2),
+        "low_risk_percentage": round(prediction_stats["low_risk_count"] / total * 100, 2),
+        "average_risk_score": prediction_stats["average_risk_score"]
+    })
+
+
+# ---------------- PREDICTION ----------------
+@app.route("/predict", methods=["POST"])
+def predict():
+    try:
+
+        if not request.is_json:
+            return jsonify({"error": "JSON required"}), 400
+
+        data = request.get_json()
+
+        required_fields = [
+            "number_inpatient",
+            "time_in_hospital",
+            "num_medications",
+            "num_procedures",
+            "number_diagnoses",
+            "num_lab_procedures",
+            "number_emergency",
+            "age",
+            "insulin"
+        ]
+
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing {field}"}), 400
+
+        df = pd.DataFrame([data])
+
+        prediction = pipeline.predict(df)[0]
+        probability = pipeline.predict_proba(df)[0][1] * 100
+
+        risk_level = "HIGH RISK" if prediction == 1 else "LOW RISK"
+
+        result = {
+            "prediction": int(prediction),
+            "risk_level": risk_level,
+            "probability": round(probability, 2)
+        }
+
+        # update stats
+        prediction_stats["total_predictions"] += 1
+
+        if prediction == 1:
+            prediction_stats["high_risk_count"] += 1
+        else:
+            prediction_stats["low_risk_count"] += 1
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------- REPORT DOWNLOAD ----------------
+@app.route("/download_report", methods=["POST"])
+def download_report():
+
+    try:
+        data = request.get_json()
+
+        report = f"""
+Patient Readmission Report
+Generated: {datetime.now()}
+
+Risk Level: {data.get('risk_level')}
+Probability: {data.get('probability')}%
+"""
+
+        encoded = base64.b64encode(report.encode()).decode()
+
+        return jsonify({
+            "filename": "readmission_report.txt",
+            "content": encoded
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+# ---------------- HEALTH CHECK ----------------
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "healthy",
+        "pipeline_loaded": pipeline is not None
+    })
+
+
+# ---------------- STARTUP ----------------
+init_db()
+load_pipeline()
+
+
+# ---------------- RUN APP ----------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
