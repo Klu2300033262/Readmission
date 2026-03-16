@@ -25,7 +25,7 @@ function App() {
 
   const fetchAnalytics = async () => {
     try {
-      const response = await fetch('http://localhost:5000/analytics');
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/analytics`);
       if (response.ok) {
         const data = await response.json();
         setAnalytics(data);
@@ -41,7 +41,7 @@ function App() {
     setResult(null);
 
     try {
-      const response = await fetch('http://localhost:5000/predict', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -71,7 +71,7 @@ function App() {
   const handleDownloadReport = async () => {
     if (!result) return;
     try {
-      const response = await fetch('http://localhost:5000/download_report', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/download_report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(result),
